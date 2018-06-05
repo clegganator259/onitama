@@ -6,15 +6,23 @@ defmodule Card do
 
   defstruct [:name,:moves]
 
+  @doc """
+  Given a card, it's move index and a coord it returns the coord if the move is applied to it.
+
+  iex> Card.apply(%Card{name: "Foo", moves: [{1,2},{2,1},{-1,-2},{-2,-1}]}, 1, {2, 3})
+  {:ok, {4, 4}}
+
+  On fail it returns invalid move
+
+  iex> Card.apply(%Card{name: "Foo", moves: [{1,2},{2,1},{-1,-2},{-2,-1}]}, 1, {3, 3})
+  {:error, :invalid_move}
+  """
   def apply(card=%Card{}, move_index, {x,y}) do
     case Card.get_move(card, move_index) do
       {:error, msg} -> {:error, msg}
       {:ok, {dx, dy}} -> cond do
-        x + dx >= Board.get_width -> {:error, :invalid_move}
-        y + dy >= Board.get_height -> {:error, :invalid_move}
-        x + dx < 0 -> {:error, :invalid_move}
-        y + dy < 0 -> {:error, :invalid_move}
-        true -> {:ok, {x + dx, y + dy}}
+        Board.valid_coord?({x + dx, y + dy}) -> {:ok, {x + dx, y + dy}}
+        true -> {:error, :invalid_move}
       end
     end
   end
