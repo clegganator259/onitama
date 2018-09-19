@@ -11,16 +11,21 @@ defmodule Board do
 
   defstruct [:units, :cards, :turn]
 
-  def new({c1, c2, c3, c4, c5}) do
+  def new(cards=[c1, c2, c3, c4, c5]) do
+    Board.new(cards, nil)
+    # %Board{units: {red: Board.start_position, blue: Board.start_position}, cards: {red: {c1, c2}, blue: {c3,c4} float: c5}}
+  end
+
+  def new([c1, c2, c3, c4, c5], player) do
     %Board{
+      turn: player,
       units: %{
         red: Board.start_position, blue: Board.start_position
       },
       cards: %{
-        red: {c1, c2}, blue: {c3,c4}, float: c5
+        red: [c1, c2], blue: [c3,c4], float: c5
       }
     }
-    # %Board{units: {red: Board.start_position, blue: Board.start_position}, cards: {red: {c1, c2}, blue: {c3,c4} float: c5}}
   end
 
   def start_position do
@@ -59,7 +64,7 @@ defmodule Board do
   examples
 
   No victor
-  iex> Board.victory?(:red, Board.new({nil,nil,nil,nil,nil}))
+  iex> Board.victory?(:red, Board.new([nil,nil,nil,nil,nil]))
   false
 
   iex> Board.victory?(:red, %Board{units: %{red: %{{2,4} => :master}, blue: %{{1,1} => :master}}})
@@ -84,32 +89,25 @@ defmodule Board do
   examples:
 
   iex> Board.remove_taken_pieces({:ok, %Board{units: %{red: %{{1,1} => :student}, blue: %{{3,3} => :student}}}}, :red)
-  {:ok, %Board{units: %{red: %{{1,1} => :student}, blue: %{}}, cards: nil, turn: nil}}
+  {:ok, %Board{units: %{red: %{{1,1} => :student}, blue: %{}}}}
 
   iex> Board.remove_taken_pieces({:ok, %Board{units: %{red: %{{1,1} => :student}, blue: %{{2,2} => :student}}}}, :red)
-  {:ok, %Board{units: %{red: %{{1,1} => :student}, blue: %{{2,2} => :student}}, cards: nil, turn: nil}}
-
-  iex> Board.remove_taken_pieces({:ok, %Board{units: %{red: %{{-1,1} => :student}, blue: %{{2,2} => :student}}}}, :red)
-  {:error, :invalid_board}
+  {:ok, %Board{units: %{red: %{{1,1} => :student}, blue: %{{2,2} => :student}}}}
   """
-  def remove_taken_pieces({:ok, board} = {:ok, %Board{units: units}}, player)  do
-    if Board.valid_board?(board) do
-      opponent = Board.opponent(player)
-      %{^player => friendly_units, ^opponent => enemy_units} = units
-      resulting_units = enemy_units |> Enum.filter(
-        fn
-          {k, _} -> friendly_units
-          |> Map.has_key?(
-            case Board.translate_coords(k) do
-              {:ok, coords} -> coords
-            end
-          ) |> Kernel.not
-        end
-      ) |> Map.new # Result is a list if we don't convert it back to a map
-      {:ok, %Board{board | units: %{player  => friendly_units, opponent => resulting_units}}}
-    else
-        {:error, :invalid_board}
-    end
+  def remove_taken_pieces({:ok, board=%Board{units: units}}, player)  do
+    opponent = Board.opponent(player)
+    %{^player => friendly_units, ^opponent => enemy_units} = units
+    resulting_units = enemy_units |> Enum.filter(
+      fn
+        {k, _} -> friendly_units
+        |> Map.has_key?(
+          case Board.translate_coords(k) do
+            {:ok, coords} -> coords
+          end
+        ) |> Kernel.not
+      end
+    ) |> Map.new # Result is a list if we don't convert it back to a map
+    {:ok, %{board | units: %{player => friendly_units, opponent => resulting_units}}}
   end
 
   def remove_taken_pieces(_,{:error, msg}) do
@@ -136,6 +134,24 @@ defmodule Board do
     end
   end
 
+  @doc """
+  Checks if a coord is within the bounds of the board
+
+  iex> Board.valid_coord?({0,0})
+  true
+
+  iex> Board.valid_coord?({4,4})
+  true
+
+  iex> Board.valid_coord?({1,2})
+  true
+
+  iex> Board.valid_coord?({-1,-1})
+  false
+
+  iex> Board.valid_coord?({5, 5})
+  false
+  """
   def valid_coord?({x,y}) do
     cond do
       x >= @width -> false
@@ -148,18 +164,19 @@ defmodule Board do
 
   def has_card?(board = %Board{cards: cards}, card = %Card{}, player)do
     %{^player => friendly_cards} = cards
-    cards |> Enum.contains(card)
+    cards |> Enum.member?(card)
   end
+
   @doc """
   Checks to see if a player has a piece at a given position
 
-  iex> Board.has_piece?({:ok,  %Board{units: %{red: %{{2,1} => :student }}}}, :red, {2,1})
+  iex> Board.has_piece?(%Board{units: %{red: %{{2,1} => :student }}}, :red, {2,1})
   true
 
-  iex> Board.has_piece?({:ok,  %Board{units: %{red: %{{2,1} => :student }}}}, :red, {3,1})
+  iex> Board.has_piece?(%Board{units: %{red: %{{2,1} => :student }}}, :red, {3,1})
   false
   """
-  def has_piece?({:ok, board = %Board{units: units}}, player, coord) do
+  def has_piece?(board = %Board{units: units}, player, coord) do
     %{^player => friendly_units} = units
     friendly_units |> Map.has_key?(coord)
   end
@@ -169,36 +186,63 @@ defmodule Board do
 
   examples:
 
-  iex> Board.valid_board?(Board.new({1,2,3,4,5}))
+  iex> Board.valid_board?(Board.new([1,2,3,4,5]))
   true
 
   iex> Board.valid_board?(%Board{units: %{red: %{{-1, -1} => :student}, blue: %{{1,1} => :student}}})
   false
   """
-
   def valid_board?(%Board{units: %{red: red_units, blue: blue_units}}) do
     Enum.all?(red_units, fn {k,_} -> valid_coord?(k) end) and
     Enum.all?(blue_units, fn {k,_} -> valid_coord?(k) end)
   end
 
-
   @doc """
   Moves a piece from a given coord to it's new coord
 
   Examples
-  iex> Board.move_piece({:ok, %Board{units: %{red: %{{1,2} => :student}}}}, :red, {1,2}, {2,4})
+  iex> Board.move_piece(%Board{units: %{red: %{{1,2} => :student}}}, :red, {1,2}, {2,4})
   {:ok, %Board{units: %{red: %{{2,4} => :student}}}}
   """
-  def move_piece({:ok, board = %Board{units: units, cards: cards}}, player, start_coord, new_coord) do
-    pieces = board.units |> Map.get(player)
-    piece = pieces.get(start_coord)
-    existing_piece = pieces.get(new_coord)
+  def move_piece(board = %Board{units: units}, player, start_coord, new_coord) do
+    pieces = units |> Map.get(player)
+    piece = pieces |> Map.get(start_coord)
+    existing_piece = pieces |> Map.get(new_coord)
     if piece != nil and existing_piece == nil do
       new_pieces = pieces |> Map.delete(start_coord) |> Map.put(new_coord, piece)
-      %{ board  | units: Map.put(board.units, player, new_pieces) }
-
+      {:ok, %{ board  | units: Map.put(board.units, player, new_pieces)}}
     else
       {:error, "Something went wrong"}
     end
   end
+
+  @doc """
+  Rotates the cards at the end of the round to put the new card in the player's hand and the played card in the float
+
+  Examples:
+  iex> Board.rotate_cards({:ok, Board.new([:c1, :c2, :c3, :c4, :c5])}, :red, :c1)
+  {:ok, %Board{units: %{red: Board.start_position(), blue: Board.start_position()}, cards: %{red: [:c5, :c2], blue: [:c3, :c4], float: :c1}}}
+  """
+  def rotate_cards({:ok, board=%Board{cards: cards}}, player, card) do
+    friendly_cards = cards
+      |> Map.get(player)
+      |> List.delete(card)
+      |> (&([cards.float | &1])).()
+    rotated_cards = cards
+      |> Map.put(player, friendly_cards )
+      |> Map.put(:float, card)
+    {:ok, %{board | cards: rotated_cards}}
+  end
+
+  @doc """
+  Switches the player who's turn it is
+
+  Example:
+  iex> Board.switch_player({:ok, %Board{turn: :red}})
+  {:ok, %Board{turn: :blue}}
+  """
+  def switch_player({:ok, board}) do
+    {:ok, Map.update!(board, :turn, &Board.opponent/1)}
+  end
 end
+
